@@ -32,7 +32,20 @@
  *
  * MIT Licensed as described in the file LICENSE
  */
+#include <esp_err.h>
+#include <esp_idf_lib_helpers.h>
 #include "am1805.h"
+
+// #define DEBUG
+#ifdef DEBUG
+#include <esp_log.h>
+
+static const char *TAG = "am1805-c";
+#endif
+
+#define I2C_FREQ_HZ 400000
+
+#define CHECK_ARG(ARG) do { if (!(ARG)) return ESP_ERR_INVALID_ARG; } while (0)
 
 static uint8_t bcd2dec(uint8_t val)
 {
@@ -72,6 +85,8 @@ esp_err_t am1805_read_reg(i2c_dev_t* dev, uint8_t addr, uint8_t* reg)
     I2C_DEV_TAKE_MUTEX(dev);
     I2C_DEV_CHECK(dev, i2c_dev_read_reg(dev, addr, reg, 1));
     I2C_DEV_GIVE_MUTEX(dev);
+
+    return ESP_OK;
 }
 
 esp_err_t am1805_write_reg(i2c_dev_t* dev, uint8_t addr, uint8_t* reg)
@@ -81,6 +96,8 @@ esp_err_t am1805_write_reg(i2c_dev_t* dev, uint8_t addr, uint8_t* reg)
     I2C_DEV_TAKE_MUTEX(dev);
     I2C_DEV_CHECK(dev, i2c_dev_write_reg(dev, addr, reg, 1));
     I2C_DEV_GIVE_MUTEX(dev);
+
+    return ESP_OK;
 }
 
 esp_err_t am1805_set_time(i2c_dev_t* dev, struct tm* time)
@@ -100,7 +117,7 @@ esp_err_t am1805_set_time(i2c_dev_t* dev, struct tm* time)
         0, //dec2bcd(time->tm_hour)
         dec2bcd(time->tm_mday),
         dec2bcd(time->tm_mon + 1),
-        dec2bcd(time->tm_year - 100)
+        dec2bcd(time->tm_year - 100),
         dec2bcd(time->tm_wday),
     };
 
@@ -110,14 +127,22 @@ esp_err_t am1805_set_time(i2c_dev_t* dev, struct tm* time)
     if (!(ctrl1 & AM1805_REG_CTRL1_WRTC_MASK))
     {
         ctrl1 |= AM1805_REG_CTRL1_WRTC_MASK;
+        I2C_DEV_CHECK(dev, i2c_dev_write_reg(dev, AM1805_REG_CTRL1, &ctrl1, 1));
     }
     if (ctrl1 & AM1805_REG_CTRL1_12_24_MASK)
     {
         if (time->tm_hour < 12)
-            buf[2] = (dec2bcd(time->tm_hour + 1) & AM1805_REG_HOURS_12_MASK);
+            buf[2] = (dec2bcd(time->tm_hour) & AM1805_REG_HOURS_12_MASK);
+        else if (time->tm_hour == 12)
+            buf[2] = (dec2bcd(time->tm_hour) & AM1805_REG_HOURS_12_MASK) | AM1805_REG_HOURS_AMPM_MASK;
         else
-            buf[2] = (dec2bcd(time->tm_hour - 11) & AM1805_REG_HOURS_12_MASK) | AM1805_REG_HOURS_AMPM_MASK;
+            buf[2] = (dec2bcd(time->tm_hour - 12) & AM1805_REG_HOURS_12_MASK) | AM1805_REG_HOURS_AMPM_MASK;
     }
+    else
+        buf[2] = (dec2bcd(time->tm_hour) & AM1805_REG_HOURS_24_MASK);
+#ifdef DEBUG
+    ESP_LOGI(TAG, "am1805_set_time buf[2] = 0x%02x", buf[2]);
+#endif
     I2C_DEV_CHECK(dev, i2c_dev_write_reg(dev, AM1805_REG_SECONDS, buf, sizeof(buf)));
     ctrl1 &= ~AM1805_REG_CTRL1_WRTC_MASK;
     I2C_DEV_CHECK(dev, i2c_dev_write_reg(dev, AM1805_REG_CTRL1, &ctrl1, 1));
@@ -138,27 +163,46 @@ esp_err_t am1805_get_time(i2c_dev_t* dev, struct tm* time)
     I2C_DEV_CHECK(dev, i2c_dev_read_reg(dev, AM1805_REG_SECONDS, buf, 7));
     I2C_DEV_GIVE_MUTEX(dev);
 
+#ifdef DEBUG
+    ESP_LOGI(TAG, "am1805_get_time ctrl1 = 0x%02x", ctrl1);
+    ESP_LOGI(TAG, "am1805_get_time buf[2] = 0x%02x", buf[2]);
+#endif
+
     // See comments for am1805_set_time() above
     time->tm_sec  = bcd2dec(buf[0] & AM1805_REG_SECONDS_MASK);
     time->tm_min  = bcd2dec(buf[1] & AM1805_REG_MINUTES_MASK);
     if (ctrl1 & AM1805_REG_CTRL1_12_24_MASK)
     {
-        if (buf[2] & AM1805_REG_HOURS_AMPM_MASK)
-            time->tm_hour = bcd2dec(buf[2] & AM1805_REG_HOURS_12_MASK) + 11;
+        /*if ((buf[2] & AM1805_REG_HOURS_AMPM_MASK) && (bcd2dec(buf[2] & AM1805_REG_HOURS_12_MASK) < 13))
+            time->tm_hour = bcd2dec(buf[2] & AM1805_REG_HOURS_12_MASK) + 12;
         else
-            time->tm_hour = bcd2dec(buf[2] & AM1805_REG_HOURS_12_MASK);
+            time->tm_hour = bcd2dec(buf[2] & AM1805_REG_HOURS_12_MASK);*/
+        if (buf[2] & AM1805_REG_HOURS_AMPM_MASK)
+        {
+            if (bcd2dec(buf[2] & AM1805_REG_HOURS_12_MASK) == 12)
+                time->tm_hour = 12; // 12 p.m. is 12:00
+            else
+                time->tm_hour = bcd2dec(buf[2] & AM1805_REG_HOURS_12_MASK) + 12;
+        }
+        else
+        {
+            if (bcd2dec(buf[2] & AM1805_REG_HOURS_12_MASK) == 12)
+                time->tm_hour = 0; // 12 a.m . is 0:00
+            else
+                time->tm_hour = bcd2dec(buf[2] & AM1805_REG_HOURS_12_MASK);
+        }
     }
     else
         time->tm_hour = bcd2dec(buf[2] & AM1805_REG_HOURS_24_MASK);
     time->tm_mday = bcd2dec(buf[3] & AM1805_REG_DATE_MASK);
     time->tm_mon  = bcd2dec(buf[4] & AM1805_REG_MONTHS_MASK) - 1;
     time->tm_year = bcd2dec(buf[5]) + 100;
-    time->tm_wday = bcd2dec(buf[6] & AM1805_REG_WEEKDAY_MASK) - 1;
+    time->tm_wday = bcd2dec(buf[6] & AM1805_REG_WEEKDAY_MASK);
 
     return ESP_OK;
 }
 
-esp_err_t am1805_get_id(i2c_dev_t dev, am1805_id_t* id)
+esp_err_t am1805_get_id(i2c_dev_t* dev, am1805_id_t* id)
 {
     CHECK_ARG(dev && id);
 
@@ -186,12 +230,12 @@ static esp_err_t am1805_ram_offset2addr(uint16_t offset, uint8_t* addr, uint8_t*
 
     if (offset < 0x100)
     {
-        addr = (offset & 0x3F) + AM1805_REG_STANDARD_RAM;
+        *addr = (offset & 0x3F) + AM1805_REG_STANDARD_RAM;
         xads = offset >> 6;
     }
     else if (offset < 0x200)
     {
-        addr = ((offset - 0x100) & 0x7F) + AM1805_REG_ALTERNATE_RAM;
+        *addr = ((offset - 0x100) & 0x7F) + AM1805_REG_ALTERNATE_RAM;
         xada = (offset - 0x100) >> 7;
     }
     else
@@ -199,7 +243,11 @@ static esp_err_t am1805_ram_offset2addr(uint16_t offset, uint8_t* addr, uint8_t*
         return ESP_ERR_INVALID_ARG;
     }
 
-    extaddr = (xada << AM1805_REG_EXTADDR_XADA_SHIFT) | (xads << AM1805_REG_EXTADDR_XADS_SHIFT);
+    *extaddr = (xada << AM1805_REG_EXTADDR_XADA_SHIFT) | (xads << AM1805_REG_EXTADDR_XADS_SHIFT);
+
+#ifdef DEBUG
+    ESP_LOGI(TAG, "offset = %d addr = %d extaddr = 0x%02x", offset, *addr, *extaddr);
+#endif
 
     return ESP_OK;
 }
@@ -234,12 +282,14 @@ esp_err_t am1805_ram_read_byte(i2c_dev_t* dev, uint16_t offset, uint8_t *buf)
 
 esp_err_t am1805_ram_read(i2c_dev_t* dev, uint16_t offset, uint8_t *buf, uint8_t len)
 {
+    CHECK_ARG(dev && buf);
+
     esp_err_t ret;
     uint16_t i;
 
     for (i = 0; i < len; i++)
     {
-        if ((ret = am1805_read_ram_byte(dev, offset + i, &buf[i])) != ESP_OK)
+        if ((ret = am1805_ram_read_byte(dev, offset + i, &buf[i])) != ESP_OK)
         {
             return ret;
         }
@@ -278,12 +328,14 @@ esp_err_t am1805_ram_write_byte(i2c_dev_t* dev, uint8_t offset, uint8_t *buf)
 
 esp_err_t am1805_ram_write(i2c_dev_t* dev, uint8_t offset, uint8_t *buf, uint8_t len)
 {
+    CHECK_ARG(dev && buf);
+
     esp_err_t ret;
     uint16_t i;
 
     for (i = 0; i < len; i++)
     {
-        if ((ret = am1805_write_ram_byte(dev, offset + i, &buf[i])) != ESP_OK)
+        if ((ret = am1805_ram_write_byte(dev, offset + i, &buf[i])) != ESP_OK)
         {
             return ret;
         }
@@ -292,12 +344,12 @@ esp_err_t am1805_ram_write(i2c_dev_t* dev, uint8_t offset, uint8_t *buf, uint8_t
     return ESP_OK;
 }
 
-esp_err_t am1805_get_status(i2c_dev_t* dev, uint8_t status)
+esp_err_t am1805_get_status(i2c_dev_t* dev, uint8_t* status)
 {
     CHECK_ARG(dev && status);
 
     I2C_DEV_TAKE_MUTEX(dev);
-    I2C_DEV_CHECK(dev, i2c_dev_read_reg(dev, AM1805_REG_STATUS, &status, 1));
+    I2C_DEV_CHECK(dev, i2c_dev_read_reg(dev, AM1805_REG_STATUS, status, 1));
     I2C_DEV_GIVE_MUTEX(dev);
 
     return ESP_OK;
@@ -313,6 +365,17 @@ esp_err_t am1805_clear_status(i2c_dev_t* dev, uint8_t mask)
     I2C_DEV_CHECK(dev, i2c_dev_read_reg(dev, AM1805_REG_STATUS, &tmp, 1));
     tmp &= ~mask;
     I2C_DEV_CHECK(dev, i2c_dev_write_reg(dev, AM1805_REG_STATUS, &tmp, 1));
+    I2C_DEV_GIVE_MUTEX(dev);
+
+    return ESP_OK;
+}
+
+esp_err_t am1805_get_oscillator_status(i2c_dev_t* dev, uint8_t* oscillator_status)
+{
+    CHECK_ARG(dev && oscillator_status);
+
+    I2C_DEV_TAKE_MUTEX(dev);
+    I2C_DEV_CHECK(dev, i2c_dev_read_reg(dev, AM1805_REG_OSCILLATOR_STATUS, oscillator_status, 1));
     I2C_DEV_GIVE_MUTEX(dev);
 
     return ESP_OK;
@@ -352,6 +415,8 @@ esp_err_t am1805_set_autocalibration_filter_cap(i2c_dev_t* dev, am1805_reg_afctr
 
 esp_err_t am1805_set_autocalibration_mode(i2c_dev_t* dev, am1805_autocalibration_freq_t freq, am1805_autocalibration_mode_t mode)
 {
+    CHECK_ARG(dev);
+
     uint8_t oscillator_ctrl = 0;
     uint8_t tmp;
     uint8_t key = AM1805_REG_CONFIGURATION_KEY_OSC_CTRL_KEY;
@@ -376,6 +441,19 @@ esp_err_t am1805_set_autocalibration_mode(i2c_dev_t* dev, am1805_autocalibration
     tmp |= oscillator_ctrl;
     I2C_DEV_CHECK(dev, i2c_dev_write_reg(dev, AM1805_REG_CONFIGURATION_KEY, &key, 1));
     I2C_DEV_CHECK(dev, i2c_dev_write_reg(dev, AM1805_REG_OSCILLATOR_CTRL, &tmp, 1));
+    I2C_DEV_GIVE_MUTEX(dev);
+
+    return ESP_OK;
+}
+
+esp_err_t am1805_software_reset(i2c_dev_t* dev)
+{
+    CHECK_ARG(dev);
+
+    uint8_t key = AM1805_REG_CONFIGURATION_KEY_SW_RESET_KEY;
+
+    I2C_DEV_TAKE_MUTEX(dev);
+    I2C_DEV_CHECK(dev, i2c_dev_write_reg(dev, AM1805_REG_CONFIGURATION_KEY, &key, 1));
     I2C_DEV_GIVE_MUTEX(dev);
 
     return ESP_OK;

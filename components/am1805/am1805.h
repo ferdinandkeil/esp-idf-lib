@@ -37,7 +37,9 @@
 #define __AM1805_H__
 
 #include <time.h>
+#include <stdint.h>
 #include <esp_err.h>
+#include <i2cdev.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -76,7 +78,7 @@ extern "C" {
 #define AM1805_REG_COUNTDOWN_TIMER    0x19
 #define AM1805_REG_COUNTDOWN_INITIAL  0x1A
 #define AM1805_REG_WDT                0x1B
-#define AM1805_REG_OSCILLATOR_CTRL
+#define AM1805_REG_OSCILLATOR_CTRL    0x1C
 #define AM1805_REG_OSCILLATOR_STATUS  0x1D
 //      RESERVED                      0x1E
 #define AM1805_REG_CONFIGURATION_KEY  0x1F
@@ -169,6 +171,18 @@ extern "C" {
 #define AM1805_REG_OSCILLATOR_CTRL_ACAL_MASK  (3<<5)
 #define AM1805_REG_OSCILLATOR_CTRL_OSEL_MASK  (1<<7)
 
+#define AM1805_REG_OSCILLATOR_STATUS_ACF_SHIFT    0
+#define AM1805_REG_OSCILLATOR_STATUS_OF_SHIFT     1
+#define AM1805_REG_OSCILLATOR_STATUS_OMODE_SHIFT  4
+#define AM1805_REG_OSCILLATOR_STATUS_LKO2_SHIFT   5
+#define AM1805_REG_OSCILLATOR_STATUS_XTCAL_SHIFT  6
+
+#define AM1805_REG_OSCILLATOR_STATUS_ACF_MASK    (1<<0)
+#define AM1805_REG_OSCILLATOR_STATUS_OF_MASK     (1<<1)
+#define AM1805_REG_OSCILLATOR_STATUS_OMODE_MASK  (1<<4)
+#define AM1805_REG_OSCILLATOR_STATUS_LKO2_MASK   (1<<5)
+#define AM1805_REG_OSCILLATOR_STATUS_XTCAL_MASK  (3<<6)
+
 #define AM1805_REG_CONFIGURATION_KEY_OSC_CTRL_KEY    0xA1
 #define AM1805_REG_CONFIGURATION_KEY_SW_RESET_KEY    0x3C
 #define AM1805_REG_CONFIGURATION_KEY_ANALOG_REG_KEY  0x9D
@@ -188,6 +202,8 @@ extern "C" {
 #define AM1805_REG_EXTADDR_WDIN_MASK  (1<<5)
 #define AM1805_REG_EXTADDR_BPOL_MASK  (1<<6)
 #define AM1805_REG_EXTADDR_O4BM_MASK  (1<<7)
+
+#define AM1805_RAM_ADDRESS_MAX 0x0FF
 
 /**
  * Hour format setting
@@ -236,7 +252,8 @@ typedef enum
 /**
  * Complete device identification data
  */
-typedef struct {
+typedef struct
+{
     uint16_t part_number;    //!< part number in BCD format
     uint8_t part_revision;   //!< revision number of the part
     uint16_t lot_number;     //!< manufacturing lot number
@@ -308,7 +325,7 @@ esp_err_t am1805_get_time(i2c_dev_t* dev, struct tm* time);
  * @param id          Pointer to ID struct
  * @return esp_err_t  `ESP_OK` on success
  */
-esp_err_t am1805_get_id(i2c_dev_t dev, am1805_id_t* id);
+esp_err_t am1805_get_id(i2c_dev_t* dev, am1805_id_t* id);
 
 /**
  * @brief Reads one byte from the RTC's RAM
@@ -318,7 +335,7 @@ esp_err_t am1805_get_id(i2c_dev_t dev, am1805_id_t* id);
  *        the driver.
  * 
  * @param dev         Device descriptor
- * @param offset      Offset address
+ * @param offset      Offset address [0 .. 0x1FF]
  * @param buf         Buffer to store the byte
  * @return esp_err_t  `ESP_OK` on success
  */
@@ -328,7 +345,7 @@ esp_err_t am1805_ram_read_byte(i2c_dev_t* dev, uint16_t offset, uint8_t *buf);
  * @brief Read multiple bytes from the RTC's RAM
  * 
  * @param dev         Device descriptor
- * @param offset      Offset address
+ * @param offset      Offset address [0 .. 0x1FF]
  * @param buf         Buffer to store the bytes
  * @param len         Number of bytes to read
  * @return esp_err_t  `ESP_OK` on success
@@ -339,22 +356,22 @@ esp_err_t am1805_ram_read(i2c_dev_t* dev, uint16_t offset, uint8_t *buf, uint8_t
  * @brief Write one byte to the RTC's RAM
  * 
  * @param dev         Device descriptor
- * @param offset      Offset address
+ * @param offset      Offset address [0 .. 0x1FF]
  * @param buf         Buffer containing the byte
  * @return esp_err_t  `ESP_OK` on success
  */
-esp_err_t am1805_ram_write_byte(i2c_dev_t* dev, uint16_t offset, uint8_t *buf);
+esp_err_t am1805_ram_write_byte(i2c_dev_t* dev, uint8_t offset, uint8_t *buf);
 
 /**
  * @brief Write multiple bytes to the RTC's RAM
  * 
  * @param dev         Device descriptor
- * @param offset      Offset address
+ * @param offset      Offset address [0 .. 0x1FF]
  * @param buf         Buffer containing the bytes
  * @param len         Number of bytes to write
  * @return esp_err_t  `ESP_OK` on success
  */
-esp_err_t am1805_ram_write(i2c_dev_t* dev, uint16_t offset, uint8_t *buf, uint8_t len);
+esp_err_t am1805_ram_write(i2c_dev_t* dev, uint8_t offset, uint8_t *buf, uint8_t len);
 
 /**
  * @brief Get the status register
@@ -363,7 +380,7 @@ esp_err_t am1805_ram_write(i2c_dev_t* dev, uint16_t offset, uint8_t *buf, uint8_
  * @param status      Buffer for the status register
  * @return esp_err_t  `ESP_OK` on success
  */
-esp_err_t am1805_get_status(i2c_dev_t* dev, uint8_t status);
+esp_err_t am1805_get_status(i2c_dev_t* dev, uint8_t* status);
 
 /**
  * @brief Clear the bits defined by the mask in the status register
@@ -375,7 +392,18 @@ esp_err_t am1805_get_status(i2c_dev_t* dev, uint8_t status);
 esp_err_t am1805_clear_status(i2c_dev_t* dev, uint8_t mask);
 
 /**
+ * @brief Get the oscillator status register
+ * 
+ * @param dev                Device descriptor
+ * @param oscillator_status  Buffer for the status register
+ * @return esp_err_t         `ESP_OK` on success
+ */
+esp_err_t am1805_get_oscillator_status(i2c_dev_t* dev, uint8_t* oscillator_status);
+
+/**
  * @brief Set the hour format (12h or 24h)
+ * 
+ * @note The time is invalid after the hour format has been changed needs to be set again.
  * 
  * @param dev          Device descriptor
  * @param hour_format  Hour format to set
@@ -401,6 +429,14 @@ esp_err_t am1805_set_autocalibration_filter_cap(i2c_dev_t* dev, am1805_reg_afctr
  * @return esp_err_t  `ESP_OK` on success
  */
 esp_err_t am1805_set_autocalibration_mode(i2c_dev_t* dev, am1805_autocalibration_freq_t freq, am1805_autocalibration_mode_t mode);
+
+/**
+ * @brief Cause a software reset of the device
+ * 
+ * @param dev         Device descriptor
+ * @return esp_err_t  `ESP_OK` on success
+ */
+esp_err_t am1805_software_reset(i2c_dev_t* dev);
 
 #ifdef	__cplusplus
 }
