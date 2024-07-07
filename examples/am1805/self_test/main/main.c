@@ -5,16 +5,14 @@
 #include <inttypes.h>
 #include <time.h>
 #include <esp_random.h>
+#include <string.h>
 
 #define TIME_STR_LEN                        512
 #define AM1805_EXAMPLE_RAM_RANDOM_ADDRESSES 10
 
 static const char *TAG = "am1805-example";
 
-bool timescmp(struct tm *time1, struct tm *time2)
-{
-    if (time1->)
-}
+#define WAIT_FOREVER() do { vTaskDelay(portMAX_DELAY); } while(1)
 
 void am1805_test(void *pvParameters)
 {
@@ -35,16 +33,17 @@ void am1805_test(void *pvParameters)
     memset(&local_time, 0, sizeof(struct tm));
     memset(&rtc_time, 0, sizeof(struct tm));
 
-    local_time->tm_sec = 50;
-    local_time->tm_min = 59;
-    local_time->tm_hour = 11;
-    local_time->tm_mday = 1;
-    local_time->tm_mon = 3;
-    local_time->tm_year = 2037;
-    local_time->tm_wday = 2;
+    local_time.tm_sec = 59;
+    local_time.tm_min = 59;
+    local_time.tm_hour = 11;
+    local_time.tm_mday = 1;
+    local_time.tm_mon = 2;
+    local_time.tm_year = 137;
+    local_time.tm_wday = 0;
 
     /* Software reset of the RTC */
     ESP_ERROR_CHECK(am1805_software_reset(&dev));
+    vTaskDelay(pdMS_TO_TICKS(200));
 
     /* Check if setting the hour format works */
     ESP_ERROR_CHECK(am1805_set_hour_format(&dev, AM1805_REG_CTRL1_HOUR_FORMAT_12));
@@ -56,15 +55,13 @@ void am1805_test(void *pvParameters)
     else
     {
         ESP_LOGE(TAG, "failed to set hour format to 12h");
-        while (1)
-            ;
+        WAIT_FOREVER();
     }
     ESP_ERROR_CHECK(am1805_read_reg(&dev, AM1805_REG_HOURS, &buf));
     if (buf & AM1805_REG_HOURS_AMPM_MASK)
     {
         ESP_LOGE(TAG, "AM/PM should not be set but IS set");
-        while (1)
-            ;
+        WAIT_FOREVER();
     }
 
     /* Check if setting the time works */
@@ -79,14 +76,14 @@ void am1805_test(void *pvParameters)
     {
         assert(strftime(time_str, TIME_STR_LEN, "%a, %d %b %Y %T", &rtc_time) > 0);
         ESP_LOGE(TAG, "failed to set time of the RTC (time is %s)", time_str);
-        while (1)
-            ;
+        WAIT_FOREVER();
     }
 
     /* See if RTC is running */
-    vTaskDelay(pdMS_TO_TICKS(10100));
+    ESP_LOGI(TAG, "will wait for 2 seconds...");
+    vTaskDelay(pdMS_TO_TICKS(2100));
     ESP_ERROR_CHECK(am1805_get_time(&dev, &rtc_time));
-    if ((rtc_time->tm_hour == 12) && (rtc_time->tm_min == 0))
+    if ((rtc_time.tm_hour == 12) && (rtc_time.tm_min == 0))
     {
         assert(strftime(time_str, TIME_STR_LEN, "%a, %d %b %Y %T", &rtc_time) > 0);
         ESP_LOGI(TAG, "RTC is running (time is %s)", time_str);
@@ -94,45 +91,60 @@ void am1805_test(void *pvParameters)
     else
     {
         assert(strftime(time_str, TIME_STR_LEN, "%a, %d %b %Y %T", &rtc_time) > 0);
-        ESP_LOGE(TAG, "RTC is not running correctly (time is %)", time_str);
-        while (1)
-            ;
+        ESP_LOGE(TAG, "RTC is not running correctly (time is %s)", time_str);
+        WAIT_FOREVER();
     }
     ESP_ERROR_CHECK(am1805_read_reg(&dev, AM1805_REG_HOURS, &buf));
     if (!(buf & AM1805_REG_HOURS_AMPM_MASK))
     {
         ESP_LOGE(TAG, "AM/PM should be set but is NOT set");
-        while (1)
-            ;
+        WAIT_FOREVER();
     }
 
-    /* Check if changing the hour format works correctly */
+    /* Check if it also works with the 24 h format */
     ESP_ERROR_CHECK(am1805_set_hour_format(&dev, AM1805_REG_CTRL1_HOUR_FORMAT_24));
     ESP_ERROR_CHECK(am1805_read_reg(&dev, AM1805_REG_CTRL1, &buf));
-    if (!(buf && AM1805_REG_CTRL1_12_24_MASK))
+    if (!(buf & AM1805_REG_CTRL1_12_24_MASK))
     {
         ESP_LOGI(TAG, "set hour format to 24h");
     }
     else
     {
         ESP_LOGE(TAG, "failed to set hour format to 24h");
-        while (1)
-            ;
+        WAIT_FOREVER();
     }
-    ESP_ERROR_CHECK(am1805_read_reg(&dev, AM1805_REG_HOURS, &buf));
+    ESP_ERROR_CHECK(am1805_set_time(&dev, &local_time));
     ESP_ERROR_CHECK(am1805_get_time(&dev, &rtc_time));
-    if ((buf & AM1805_REG_HOURS_24_MASK) != 0x10)
+    if (memcmp(&local_time, &rtc_time, sizeof(struct tm)) == 0)
     {
         assert(strftime(time_str, TIME_STR_LEN, "%a, %d %b %Y %T", &rtc_time) > 0);
-        ESP_LOGE(TAG, "time is not correct after changing the hour mode (time is %s)", time_str);
-        while (1)
-            ;
+        ESP_LOGI(TAG, "set time of the RTC (time is %s)", time_str);
+    }
+    else
+    {
+        assert(strftime(time_str, TIME_STR_LEN, "%a, %d %b %Y %T", &rtc_time) > 0);
+        ESP_LOGE(TAG, "failed to set time of the RTC (time is %s)", time_str);
+        WAIT_FOREVER();
+    }
+    ESP_LOGI(TAG, "will wait for 2 seconds...");
+    vTaskDelay(pdMS_TO_TICKS(2100));
+    ESP_ERROR_CHECK(am1805_get_time(&dev, &rtc_time));
+    if ((rtc_time.tm_hour == 12) && (rtc_time.tm_min == 0))
+    {
+        assert(strftime(time_str, TIME_STR_LEN, "%a, %d %b %Y %T", &rtc_time) > 0);
+        ESP_LOGI(TAG, "RTC is running (time is %s)", time_str);
+    }
+    else
+    {
+        assert(strftime(time_str, TIME_STR_LEN, "%a, %d %b %Y %T", &rtc_time) > 0);
+        ESP_LOGE(TAG, "RTC is not running correctly (time is %s)", time_str);
+        WAIT_FOREVER();
     }
 
     /* Get device ID structure */
     ESP_ERROR_CHECK(am1805_get_id(&dev, &id));
-    ESP_LOGI(TAG, "AM1805 ID\nPart Number = 0x%04x\nPart Revision = %d\nLot Number = %d\nUnique ID = 0x%x\nWafer Register = %d", id->part_number, id->part_revision, id->lot_number, id->unique_id,
-        id->wafer_register);
+    ESP_LOGI(TAG, "AM1805 ID\nPart Number = 0x%04x\nPart Revision = %d\nLot Number = %d\nUnique ID = 0x%x\nWafer Register = %d", id.part_number, id.part_revision, id.lot_number, id.unique_id,
+        id.wafer_register);
 
     /* Check RAM by writing random values to random addresses */
     esp_fill_random(random_addresses, sizeof(random_addresses));
@@ -143,9 +155,8 @@ void am1805_test(void *pvParameters)
         ESP_ERROR_CHECK(am1805_ram_read_byte(&dev, (random_addresses[i] & AM1805_RAM_ADDRESS_MAX), &buf));
         if (buf != random_bytes[i])
         {
-            ESP_LOGE(TAG, "encountered an error while checking the RAM (wrote 0x%02x, read back 0x%02x)", random_bytes[i], buf);
-            while (1)
-                ;
+            ESP_LOGE(TAG, "encountered an error while checking the RAM (address %d, wrote 0x%02x, read back 0x%02x)", (random_addresses[i] & AM1805_RAM_ADDRESS_MAX), random_bytes[i], buf);
+            WAIT_FOREVER();
         }
     }
     ESP_LOGI(TAG, "successfully wrote and read from %d random RAM addresses", AM1805_EXAMPLE_RAM_RANDOM_ADDRESSES);
@@ -170,8 +181,7 @@ void am1805_test(void *pvParameters)
     else
     {
         ESP_LOGE(TAG, "failed to enabled the autocalibration filter capacitor pin");
-        while (1)
-            ;
+        WAIT_FOREVER();
     }
 
     /* Enable autocalibration in RC mode */
@@ -182,8 +192,7 @@ void am1805_test(void *pvParameters)
     if (buf & AM1805_REG_OSCILLATOR_STATUS_ACF_MASK)
     {
         ESP_LOGE(TAG, "autocalibration failed");
-        while (1)
-            ;
+        WAIT_FOREVER();
     }
 
     ESP_LOGI(TAG, "finished AM1805 example");
