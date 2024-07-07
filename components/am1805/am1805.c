@@ -36,13 +36,6 @@
 #include <esp_idf_lib_helpers.h>
 #include "am1805.h"
 
-// #define DEBUG
-#ifdef DEBUG
-#include <esp_log.h>
-
-static const char *TAG = "am1805-c";
-#endif
-
 #define I2C_FREQ_HZ 400000
 
 #define CHECK_ARG(ARG) do { if (!(ARG)) return ESP_ERR_INVALID_ARG; } while (0)
@@ -140,9 +133,6 @@ esp_err_t am1805_set_time(i2c_dev_t* dev, struct tm* time)
     }
     else
         buf[2] = (dec2bcd(time->tm_hour) & AM1805_REG_HOURS_24_MASK);
-#ifdef DEBUG
-    ESP_LOGI(TAG, "am1805_set_time buf[2] = 0x%02x", buf[2]);
-#endif
     I2C_DEV_CHECK(dev, i2c_dev_write_reg(dev, AM1805_REG_SECONDS, buf, sizeof(buf)));
     ctrl1 &= ~AM1805_REG_CTRL1_WRTC_MASK;
     I2C_DEV_CHECK(dev, i2c_dev_write_reg(dev, AM1805_REG_CTRL1, &ctrl1, 1));
@@ -162,11 +152,6 @@ esp_err_t am1805_get_time(i2c_dev_t* dev, struct tm* time)
     I2C_DEV_CHECK(dev, i2c_dev_read_reg(dev, AM1805_REG_CTRL1, &ctrl1, 1));
     I2C_DEV_CHECK(dev, i2c_dev_read_reg(dev, AM1805_REG_SECONDS, buf, 7));
     I2C_DEV_GIVE_MUTEX(dev);
-
-#ifdef DEBUG
-    ESP_LOGI(TAG, "am1805_get_time ctrl1 = 0x%02x", ctrl1);
-    ESP_LOGI(TAG, "am1805_get_time buf[2] = 0x%02x", buf[2]);
-#endif
 
     // See comments for am1805_set_time() above
     time->tm_sec  = bcd2dec(buf[0] & AM1805_REG_SECONDS_MASK);
@@ -244,10 +229,6 @@ static esp_err_t am1805_ram_offset2addr(uint16_t offset, uint8_t* addr, uint8_t*
     }
 
     *extaddr = (xada << AM1805_REG_EXTADDR_XADA_SHIFT) | (xads << AM1805_REG_EXTADDR_XADS_SHIFT);
-
-#ifdef DEBUG
-    ESP_LOGI(TAG, "offset = %d addr = %d extaddr = 0x%02x", offset, *addr, *extaddr);
-#endif
 
     return ESP_OK;
 }
