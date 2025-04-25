@@ -501,6 +501,15 @@ esp_err_t am1805_get_batmode_io(i2c_dev_t* dev, am1805_batmode_io_t* batmode_io)
  */
 esp_err_t am1805_set_battery_ref(i2c_dev_t* dev, am1805_battery_ref_t battery_ref);
 
+/**
+ * @brief Get the analog status register
+ * 
+ * @param dev            Device descriptor
+ * @param analog_status  Buffer for the status register
+ * @return esp_err_t     `ESP_OK` on success
+ */
+esp_err_t am1805_get_analog_status(i2c_dev_t* dev, uint8_t* analog_status);
+
 #ifdef	__cplusplus
 }
 #endif
