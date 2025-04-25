@@ -205,6 +205,14 @@ extern "C" {
 
 #define AM1805_RAM_ADDRESS_MAX 0x0FF
 
+#define AM1805_REG_BATMODE_IO_IOBM_SHIFT 7
+
+#define AM1805_REG_BATMODE_IO_IOBM_MASK  (1<<7)
+
+#define AM1805_REG_BATTERY_REF_BREF_SHIFT 4
+
+#define AM1805_REG_BATTERY_REF_BREF_MASK  0xf0
+
 /**
  * Hour format setting
  */
@@ -260,6 +268,26 @@ typedef struct
     uint16_t unique_id;      //!< unique part ID (unique for every part)
     uint8_t wafer_register;  //!< manufacturing wafer number
 } am1805_id_t;
+
+/**
+ * Set IO interface state in battery mode
+ */
+typedef enum
+{
+    AM1805_BATMODE_IO_DISABLED = 0x00,
+    AM1805_BATMODE_IO_ENABLED  = 0x01,
+} am1805_batmode_io_t;
+
+/**
+ * Set reference voltage for the battery voltage comparator
+ */
+typedef enum
+{
+    AM1805_BATTERY_REF_1_4V = 0xf, //!< falling volt. 1.4 V, rising volt. 1.6 V
+    AM1805_BATTERY_REF_1_8V = 0xd, //!< falling volt. 1.8 V, rising volt. 2.2 V
+    AM1805_BATTERY_REF_2_1V = 0xb, //!< falling volt. 2.1 V, rising volt. 2.5 V
+    AM1805_BATTERY_REF_2_5V = 0x7, //!< falling volt. 2.5 V, rising volt. 3.0 V
+} am1805_battery_ref_t;
 
 /**
  * @brief Initialize device descriptor
@@ -437,6 +465,33 @@ esp_err_t am1805_set_autocalibration_mode(i2c_dev_t* dev, am1805_autocalibration
  * @return esp_err_t  `ESP_OK` on success
  */
 esp_err_t am1805_software_reset(i2c_dev_t* dev);
+
+/**
+ * @brief Set the battery mode IO state
+ * 
+ * @param dev         Device descriptor
+ * @param batmode_io  IO state to set
+ * @return esp_err_t  `ESP_OK` 
+ */
+esp_err_t am1805_set_batmode_io(i2c_dev_t* dev, am1805_batmode_io_t batmode_io);
+
+/**
+ * @brief Get the battery mode IO state
+ *
+ * @param dev         Device descriptor 
+ * @param batmode_io  Pointer to store the state
+ * @return esp_err_t  `ESP_OK` on success
+ */
+esp_err_t am1805_get_batmode_io(i2c_dev_t* dev, am1805_batmode_io_t* batmode_io);
+
+/**
+ * @brief Set the battery monitor reference voltage
+ * 
+ * @param dev          Device descriptor
+ * @param battery_ref  Reference voltage to set
+ * @return esp_err_t   `ESP_OK` on success
+ */
+esp_err_t am1805_set_battery_ref(i2c_dev_t* dev, am1805_battery_ref_t battery_ref);
 
 #ifdef	__cplusplus
 }
