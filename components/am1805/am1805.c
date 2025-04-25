@@ -439,3 +439,48 @@ esp_err_t am1805_software_reset(i2c_dev_t* dev)
 
     return ESP_OK;
 }
+
+esp_err_t am1805_set_batmode_io(i2c_dev_t* dev, am1805_batmode_io_t batmode_io)
+{
+    CHECK_ARG(dev);
+
+    uint8_t key = AM1805_REG_CONFIGURATION_KEY_ANALOG_REG_KEY;
+    uint8_t iobm = AM1805_REG_BATMODE_IO_IOBM_MASK ? batmode_io : 0x00;
+
+    I2C_DEV_TAKE_MUTEX(dev);
+    I2C_DEV_CHECK(dev, i2c_dev_write_reg(dev, AM1805_REG_CONFIGURATION_KEY, &key, 1));
+    I2C_DEV_CHECK(dev, i2c_dev_write_reg(dev, AM1805_REG_BATMODE_IO, &iobm, 1));
+    I2C_DEV_GIVE_MUTEX(dev);
+
+    return ESP_OK;
+}
+
+esp_err_t am1805_get_batmode_io(i2c_dev_t* dev, am1805_batmode_io_t* batmode_io)
+{
+    CHECK_ARG(dev && batmode_io);
+
+    uint8_t tmp;
+
+    I2C_DEV_TAKE_MUTEX(dev);
+    I2C_DEV_CHECK(dev, i2c_dev_read_reg(dev, AM1805_REG_BATMODE_IO, &tmp, 1));
+    I2C_DEV_GIVE_MUTEX(dev);
+    
+    *batmode_io = (tmp & AM1805_REG_BATMODE_IO_IOBM_MASK) ? AM1805_BATMODE_IO_ENABLED : AM1805_BATMODE_IO_DISABLED;
+
+    return ESP_OK;
+}
+
+esp_err_t am1805_set_battery_ref(i2c_dev_t* dev, am1805_battery_ref_t battery_ref)
+{
+    CHECK_ARG(dev);
+
+    uint8_t key = AM1805_REG_CONFIGURATION_KEY_ANALOG_REG_KEY;
+    uint8_t tmp = battery_ref << AM1805_REG_BATTERY_REF_BREF_SHIFT;
+
+    I2C_DEV_TAKE_MUTEX(dev);
+    I2C_DEV_CHECK(dev, i2c_dev_write_reg(dev, AM1805_REG_CONFIGURATION_KEY, &key, 1));
+    I2C_DEV_CHECK(dev, i2c_dev_write_reg(dev, AM1805_REG_BREF_CTRL, &tmp, 1));
+    I2C_DEV_GIVE_MUTEX(dev);
+
+    return ESP_OK;
+}
