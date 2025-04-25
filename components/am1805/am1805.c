@@ -484,3 +484,14 @@ esp_err_t am1805_set_battery_ref(i2c_dev_t* dev, am1805_battery_ref_t battery_re
 
     return ESP_OK;
 }
+
+esp_err_t am1805_get_analog_status(i2c_dev_t* dev, uint8_t* analog_status)
+{
+    CHECK_ARG(dev && analog_status);
+
+    I2C_DEV_TAKE_MUTEX(dev);
+    I2C_DEV_CHECK(dev, i2c_dev_read_reg(dev, AM1805_REG_ASTAT, analog_status, 1));
+    I2C_DEV_GIVE_MUTEX(dev);
+
+    return ESP_OK;
+}
